@@ -83,7 +83,7 @@ class RobotP2P:
             for robot_name, (ip, port) in self.known_robots.items():
                 message = json.dumps({"name": self.robot_name, "location": "x:100, y:200"})  # Customize this message
                 self.send_message(ip, port, message)
-            time.sleep(5)
+            time.sleep(1)
 
     def stop(self):
         self.zeroconf.unregister_service(self.info)
@@ -91,7 +91,7 @@ class RobotP2P:
 
 
 if __name__ == "__main__":
-    robot_name = "Robot1"  # Change this for each robot
+    robot_name = "Robot2"  # Change this for each robot
     robot = RobotP2P(robot_name)
     robot.start()
 
