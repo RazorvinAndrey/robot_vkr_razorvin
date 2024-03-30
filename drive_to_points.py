@@ -41,6 +41,24 @@ class Robot:
                 return True
         return False
 
+    def measure_distance(self, obstacles, robots):
+        min_distance = self.lidar_range
+        # Create a temporary list combining obstacles with other robots' positions
+        # This avoids modifying the original obstacles list
+        temp_obstacles = obstacles[:] + [(r.x, r.y) for r in robots if r != self]
+
+        for obstacle in temp_obstacles:
+            dx, dy = obstacle[0] - self.x, obstacle[1] - self.y
+            distance = np.sqrt(dx**2 + dy**2)
+            obstacle_angle = np.rad2deg(np.arctan2(dy, dx)) % 360
+
+            angle_diff = abs(obstacle_angle - self.angle) % 360
+            if angle_diff < 10 or angle_diff > 350:  # Narrow field of view for simplicity
+                if distance < min_distance:
+                    min_distance = distance
+
+        return min_distance
+
     def calculate_path_steps(self, target_position):
         steps = []
         current_x, current_y = self.x, self.y
@@ -107,12 +125,18 @@ class AnimatedSimulation:
                 self.ax.plot(path_x, path_y, 'k-', linewidth=0.5)
                 self.ax.plot(robot.x, robot.y, 'bo')
 
-            # if active_robots == 0:  # Если нет активных роботов, завершаем анимацию
+                # Расчет и отображение лидарных данных
+                lidar_distance = robot.measure_distance(self.obstacles, self.robots)
+                lidar_end_x = robot.x + np.cos(np.deg2rad(robot.angle)) * lidar_distance
+                lidar_end_y = robot.y + np.sin(np.deg2rad(robot.angle)) * lidar_distance
+                self.ax.plot([robot.x, lidar_end_x], [robot.y, lidar_end_y], 'r-')
+
+            # Закрываем анимацию, если все роботы остановились
+            # if active_robots == 0:
             #     plt.close()
 
         anim = FuncAnimation(self.fig, update, frames=np.arange(100), repeat=False)
         plt.show()
-
 
 # Запускаем симуляцию с заданным количеством роботов и препятствий, двигаясь к целевой точке.
 target_position = (5, 5)
