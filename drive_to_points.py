@@ -5,23 +5,23 @@ import time
 
 
 class Robot:
-    def __init__(self, x, y, angle, target_position):
+    def __init__(self, x, y, angle, area_center, area_radius):
         self.x = x
         self.y = y
         self.angle = angle
         self.lidar_range = 5
         self.width = 0.4
-        self.length = 0.3
         self.path = [(x, y)]
-        self.target_position = target_position
-        self.steps = self.calculate_path_steps(target_position)
+        # Выбираем случайную целевую позицию внутри заданной области
+        self.target_position = (area_center[0] + np.random.uniform(-area_radius, area_radius),
+                                area_center[1] + np.random.uniform(-area_radius, area_radius))
+        self.steps = self.calculate_path_steps(self.target_position)
         self.step_index = 0
         self.stop = False
-        self.stuck_steps = 0  # Количество шагов без изменения позиции
-        self.last_position = (x, y)  # Последняя позиция для отслеживания изменений
+        self.stuck_steps = 0
+        self.last_position = (x, y)
         self.prev_x = x
         self.prev_y = y
-        self.moved_since_last_check = False  # Изменил ли робот позицию с последней проверки
 
     def move(self, obstacles, robots):
         if self.step_index < len(self.steps) and not self.stop:
@@ -133,29 +133,16 @@ class Robot:
 
 
 class AnimatedSimulation:
-    def __init__(self, num_robots, obst, target_position, init_area_center, init_area_radius):
+    def __init__(self, num_robots, obst, init_area_center, init_area_radius, target_area_center, target_area_radius):
         self.robots = [
             Robot(init_area_center[0] + np.random.uniform(-init_area_radius, init_area_radius),
                   init_area_center[1] + np.random.uniform(-init_area_radius, init_area_radius),
-                  np.random.rand() * 360, target_position)
+                  np.random.rand() * 360, target_area_center, target_area_radius)
             for _ in range(num_robots)]
         self.obstacles = [(np.random.rand() * 10, np.random.rand() * 10) for _ in range(obst)]
         self.fig, self.ax = plt.subplots()
         self.start_time = time.time()
         self.all_robots_stopped = False
-
-    def step(self):
-        all_stopped = True
-        for robot in self.robots:
-            if not robot.stop:
-                robot.move(self.obstacles, self.robots)
-                if robot.step_index < len(robot.steps):
-                    all_stopped = False
-
-        if all_stopped and not self.all_robots_stopped:
-            self.all_robots_stopped = True
-            end_time = time.time()
-            print(f"Все роботы остановились. Время выполнения: {end_time - self.start_time:.2f} секунд.")
 
     def animate(self):
         def update(frame):
@@ -176,19 +163,21 @@ class AnimatedSimulation:
             self.ax.set_xlim(0, 10)
             self.ax.set_ylim(0, 10)
 
+            # Отображение препятствий и целевых точек
             for obstacle in self.obstacles:
                 self.ax.plot(*obstacle, 'gx')
+            for robot in self.robots:
+                self.ax.plot(*robot.target_position, 'rs')  # Отображаем целевую точку красным квадратом
 
             for robot in self.robots:
                 path_x, path_y = zip(*robot.path)
                 self.ax.plot(path_x, path_y, 'k-', linewidth=0.5)
                 self.ax.plot(robot.x, robot.y, 'bo')
-
-                # Расчет и отображение лидарных данных
                 lidar_distance = robot.measure_distance(self.obstacles, self.robots)
                 lidar_end_x = robot.x + np.cos(np.deg2rad(robot.angle)) * lidar_distance
                 lidar_end_y = robot.y + np.sin(np.deg2rad(robot.angle)) * lidar_distance
                 self.ax.plot([robot.x, lidar_end_x], [robot.y, lidar_end_y], 'r-')
+
             if positions_this_frame == positions_last_frame:
                 self.steps_without_movement += 1
             else:
@@ -196,25 +185,24 @@ class AnimatedSimulation:
 
             positions_last_frame = positions_this_frame
 
-            if self.steps_without_movement >= 10 or active_robots == 0:  # Условие остановки анимации
+            if (self.steps_without_movement >= 10 or active_robots == 0) and not self.all_robots_stopped:
                 end_time = time.time()
-                print(f"Все роботы остановились или застряли. Время выполнения: {end_time - self.start_time:.2f} секунд.")
-                plt.close(self.fig)
-            # Закрываем анимацию, если все роботы остановились
-            # if active_robots == 0:
-            #     plt.close()
+                print(f"Все роботы остановились или достигли своих целей. Время выполнения: {end_time - self.start_time:.2f} секунд.")
+                self.all_robots_stopped = True
+                # plt.close(self.fig)
 
         active_robots = len(self.robots)
         positions_last_frame = []
-        anim = FuncAnimation(self.fig, update, frames=np.arange(100), repeat=False)
+        anim = FuncAnimation(self.fig, update, frames=np.arange(300), repeat=False)
         plt.show()
 
 
 # Задаем параметры для генерации начальных позиций роботов
 init_area_center = (2, 2)  # Центр области для начального расположения роботов
 init_area_radius = 2  # Радиус области
+target_area_center = (7, 7)  # Центр области для начального расположения роботов
+target_area_radius = 2  # Радиус области
 
 # Запускаем симуляцию с заданным количеством роботов, препятствий и параметрами начального расположения
-target_position = (5, 5)
-simulation = AnimatedSimulation(num_robots=5, obst=20, target_position=target_position, init_area_center=init_area_center, init_area_radius=init_area_radius)
+simulation = AnimatedSimulation(num_robots=10, obst=2, init_area_center=init_area_center, init_area_radius=init_area_radius, target_area_center=target_area_center, target_area_radius=target_area_radius)
 simulation.animate()
