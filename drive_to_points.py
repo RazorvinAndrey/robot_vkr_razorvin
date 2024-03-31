@@ -44,22 +44,21 @@ class Robot:
                 self.path.append((self.x, self.y))
                 self.step_index += 1
                 self.last_position = (self.x, self.y)
-            if (self.x, self.y) != (self.prev_x, self.prev_y):  # Проверка на изменение позиции
-                self.moved_since_last_check = True
             # Остановка, если робот не менял позицию достаточное количество шагов
             if self.stuck_steps > 10:  # Это значение можно настроить
                 self.stop = True
 
     def check_collision(self, x, y, obstacles, robots):
+        # Проверка на столкновения с роботами и препятствиями
         for obstacle in obstacles + [(r.x, r.y) for r in robots if r != self]:
             if np.hypot(x - obstacle[0], y - obstacle[1]) <= self.width / 2 + 0.1:
                 return True
         return False
 
     def make_significant_move(self, obstacles, robots):
-        # Attempt a larger movement in a random direction
+        # Попытка движения в случайном направлении
         rad_angle = np.deg2rad(np.random.randint(0, 360))
-        proposed_x = self.x + 0.5 * np.cos(rad_angle)  # Larger step size
+        proposed_x = self.x + 0.5 * np.cos(rad_angle)  # Размер шага
         proposed_y = self.y + 0.5 * np.sin(rad_angle)
         if not self.check_collision(proposed_x, proposed_y, obstacles, robots):
             self.x, self.y = proposed_x, proposed_y
@@ -68,7 +67,7 @@ class Robot:
             self.step_index = 0
 
     def avoid_collision(self, obstacles, robots):
-        # Attempt to find a clear direction to move
+        # Попытка найти свободное направление без препятствий
         for angle_offset in [30, -30, 60, -60, 90, -90, 120, -120, 180]:
             rad_angle = np.deg2rad(self.angle + angle_offset)
             proposed_x = self.x + 0.1 * np.cos(rad_angle)
@@ -76,17 +75,18 @@ class Robot:
             if not self.check_collision(proposed_x, proposed_y, obstacles, robots):
                 self.x, self.y = proposed_x, proposed_y
                 self.path.append((self.x, self.y))
-                self.steps = self.calculate_path_steps(self.target_position)  # Recalculate path to target
+                self.steps = self.calculate_path_steps(self.target_position)  # Пересчёт пути до цели
                 self.step_index = 0
                 return
-        self.stuck_steps += 1  # Increment stuck steps if no clear direction is found
+        self.stuck_steps += 1  # Счётчик шагов без движения
 
-        # If the robot is stuck for too many steps, make a more significant move
-        if self.stuck_steps >= 10:  # This threshold can be adjusted
+        # Если робот застрял в течении нескольких шагов, начинаем движение в случайном направлении
+        if self.stuck_steps >= 10:
             self.make_significant_move(obstacles, robots)
-            self.stuck_steps = 0  # Reset the counter after making a significant move
+            self.stuck_steps = 0
 
     def calculate_path_steps(self, target_position):
+        # Расчёт пути движения к цели
         steps = []
         current_x, current_y = self.x, self.y
         current_angle = np.deg2rad(self.angle)
@@ -97,7 +97,7 @@ class Robot:
             dy = target_y - current_y
             distance = np.sqrt(dx**2 + dy**2)
 
-            if distance < 0.05:  # Close enough to target
+            if distance < 0.05:  # Окрестность целевой точки
                 break
 
             target_angle = np.arctan2(dy, dx)
@@ -115,8 +115,7 @@ class Robot:
 
     def measure_distance(self, obstacles, robots):
         min_distance = self.lidar_range
-        # Create a temporary list combining obstacles with other robots' positions
-        # This avoids modifying the original obstacles list
+        # Добавим известные позиции роботов к списку препятствий, чтобы симулировать работу дальномера
         temp_obstacles = obstacles[:] + [(r.x, r.y) for r in robots if r != self]
 
         for obstacle in temp_obstacles:
@@ -125,7 +124,7 @@ class Robot:
             obstacle_angle = np.rad2deg(np.arctan2(dy, dx)) % 360
 
             angle_diff = abs(obstacle_angle - self.angle) % 360
-            if angle_diff < 10 or angle_diff > 350:  # Narrow field of view for simplicity
+            if angle_diff < 10 or angle_diff > 350:  # Поле зрения дальномера
                 if distance < min_distance:
                     min_distance = distance
 
@@ -163,14 +162,13 @@ class AnimatedSimulation:
             self.ax.set_xlim(0, 10)
             self.ax.set_ylim(0, 10)
 
-            # Отображение препятствий и целевых точек
+            # Отображение препятствий
             for obstacle in self.obstacles:
                 self.ax.plot(*obstacle, 'gx')
-            for robot in self.robots:
-                self.ax.plot(*robot.target_position, 'rs')  # Отображаем целевую точку красным квадратом
-
+            # Отображение роботов, их пути, направления движения и целевых точек
             for robot in self.robots:
                 path_x, path_y = zip(*robot.path)
+                self.ax.plot(*robot.target_position, 'rs')
                 self.ax.plot(path_x, path_y, 'k-', linewidth=0.5)
                 self.ax.plot(robot.x, robot.y, 'bo')
                 lidar_distance = robot.measure_distance(self.obstacles, self.robots)
@@ -185,6 +183,7 @@ class AnimatedSimulation:
 
             positions_last_frame = positions_this_frame
 
+            # Остановка программы
             if (self.steps_without_movement >= 10 or active_robots == 0) and not self.all_robots_stopped:
                 end_time = time.time()
                 print(f"Все роботы остановились или достигли своих целей. Время выполнения: {end_time - self.start_time:.2f} секунд.")
@@ -197,12 +196,12 @@ class AnimatedSimulation:
         plt.show()
 
 
-# Задаем параметры для генерации начальных позиций роботов
+# Задаем параметры для генерации начальных и целевых позиций роботов
 init_area_center = (2, 2)  # Центр области для начального расположения роботов
-init_area_radius = 2  # Радиус области
-target_area_center = (7, 7)  # Центр области для начального расположения роботов
-target_area_radius = 2  # Радиус области
+init_area_radius = 2  # Радиус начальной области
+target_area_center = (7, 7)  # Центр области для целевого расположения роботов
+target_area_radius = 2  # Радиус целевой области
 
-# Запускаем симуляцию с заданным количеством роботов, препятствий и параметрами начального расположения
+# Запускаем симуляцию с заданным количеством роботов, препятствий и параметрами начального и целевого расположения
 simulation = AnimatedSimulation(num_robots=10, obst=2, init_area_center=init_area_center, init_area_radius=init_area_radius, target_area_center=target_area_center, target_area_radius=target_area_radius)
 simulation.animate()
