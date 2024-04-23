@@ -203,5 +203,5 @@ target_area_center = (7, 7)  # Центр области для целевого
 target_area_radius = 2  # Радиус целевой области
 
 # Запускаем симуляцию с заданным количеством роботов, препятствий и параметрами начального и целевого расположения
-simulation = AnimatedSimulation(num_robots=10, obst=2, init_area_center=init_area_center, init_area_radius=init_area_radius, target_area_center=target_area_center, target_area_radius=target_area_radius)
+simulation = AnimatedSimulation(num_robots=2, obst=10, init_area_center=init_area_center, init_area_radius=init_area_radius, target_area_center=target_area_center, target_area_radius=target_area_radius)
 simulation.animate()
