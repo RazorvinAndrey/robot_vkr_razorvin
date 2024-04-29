@@ -25,7 +25,7 @@ class Robot:
         self.angle = angle
         self.lidar_range = 5
         self.width = 0.4
-        self.max_speed_per_step = 0.4  # максимальная скорость 0.5 метра в секунду
+        self.max_speed_per_step = 0.5  # максимальная скорость 0.5 метра в секунду
         self.path = [(x, y)]
         self.target_position = target
         self.obstacles = obstacles
@@ -83,10 +83,25 @@ class Robot:
         self.stuck_steps += 1
 
     def measure_distance(self):
-        lidar_range = 5
+        lidar_range = self.lidar_range
         lidar_angle = self.angle
-        lidar_end_x = self.x + np.cos(np.deg2rad(lidar_angle)) * lidar_range
-        lidar_end_y = self.y + np.sin(np.deg2rad(lidar_angle)) * lidar_range
+        min_distance = lidar_range  # Устанавливаем максимальное расстояние дальномера как минимальное найденное расстояние до препятствия
+
+        for angle_step in range(-5, 6):  # Проверяем углы от -5 до 5 градусов относительно текущего направления робота для учета небольших расхождений
+            check_angle = np.deg2rad(self.angle + angle_step)
+            for step in np.linspace(0, lidar_range, num=int(lidar_range/0.1)):
+                check_x = self.x + np.cos(check_angle) * step
+                check_y = self.y + np.sin(check_angle) * step
+                for obstacle in self.obstacles:
+                    if obstacle.distance((check_x, check_y)) < self.width / 2:
+                        min_distance = min(min_distance, step)  # Обновляем минимальное расстояние, если найдено более близкое препятствие
+                        break
+                else:
+                    continue
+                break
+
+        lidar_end_x = self.x + np.cos(np.deg2rad(lidar_angle)) * min_distance
+        lidar_end_y = self.y + np.sin(np.deg2rad(lidar_angle)) * min_distance
 
         return lidar_end_x, lidar_end_y
 
@@ -162,6 +177,10 @@ class AnimatedSimulation:
             robot.robots = self.robots  # Передаем список роботов каждому роботу
             self.robots.append(robot)  # Добавляем созданный робот в список self.robots
         self.fig, self.ax = plt.subplots()
+        self.width, self.height = 10, 10
+        self.ax.set_aspect('equal')  # Устанавливаем одинаковый масштаб осей
+        self.ax.set_xlim(0, self.width)
+        self.ax.set_ylim(0, self.height)
         self.start_time = time.time()
         self.all_robots_stopped = False
         self.steps_without_movement = 0
@@ -185,8 +204,9 @@ class AnimatedSimulation:
                         active_robots += 1
 
             self.ax.clear()
-            self.ax.set_xlim(0, 10)
-            self.ax.set_ylim(0, 10)
+            self.ax.set_aspect('equal')  # Сохраняем аспект при обновлении
+            self.ax.set_xlim(0, self.width)
+            self.ax.set_ylim(0, self.height)
 
             for obstacle in robot.obstacles:
                 self.ax.add_patch(obstacle)

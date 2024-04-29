@@ -24,9 +24,9 @@ class PSORobot:
 
     def update_velocity(self, global_best_position, delta_time=1):
         if not self.at_target:
-            inertia = 0.7
-            cognitive = 1.5
-            social = 1.5
+            inertia = 0.2
+            cognitive = 3.5
+            social = 3
             r1, r2 = np.random.rand(), np.random.rand()
 
             cognitive_velocity = cognitive * r1 * (self.target - self.position)
@@ -56,7 +56,7 @@ class PSORobot:
                 self.path.append(tuple(self.position))
 
     def check_if_at_target(self):
-        target_radius = 0.4
+        target_radius = 0.2
         if np.linalg.norm(self.position - self.target) < target_radius:
             self.velocity = np.zeros(2)
             self.at_target = True
@@ -65,44 +65,42 @@ class PSORobot:
         if self.at_target:
             return False
 
-        current_direction = self.velocity / np.linalg.norm(self.velocity) if np.linalg.norm(self.velocity) > 0 else np.array([1, 0])
-        avoidance_vector = np.array([0.0, 0.0])
-        safe = True  # Предполагаем, что начальное направление безопасно
+        buffer = 0.1  # Буферное расстояние для избежания столкновений
+        num_checks = 1  # Количество проверочных точек вдоль предполагаемой траектории
+        best_direction = None
+        best_score = float('-inf')
+        safe_distance = self.max_speed / num_checks
 
-        # Проверяем возможные столкновения вокруг текущего направления
-        directions = np.linspace(-np.pi, np.pi, 36, endpoint=False)  # Проверяем разные направления вокруг робота
-        for angle in directions:
+        # Итерация по разным направлениям в поисках безопасного пути
+        angles = np.linspace(-np.pi/2, np.pi/2, 18)
+        for angle in angles:
             test_direction = np.array([np.cos(self.angle + angle), np.sin(self.angle + angle)])
-            test_position = self.position + test_direction * self.max_speed
-
             collision = False
-            for obs in self.obstacles:
-                rect = patches.Rectangle((obs['x'], obs['y']), obs['width'], obs['height'])
-                if rect.contains_point(test_position):
+            for step in range(1, num_checks + 1):
+                test_position = self.position + test_direction * safe_distance * step
+                if self.check_collision(test_position, buffer):
                     collision = True
                     break
 
-            if collision:
-                if angle == 0:
-                    safe = False  # Текущее направление небезопасно
-                avoidance_vector -= test_direction  # Отталкиваемся от направления столкновения
+            if not collision:
+                # Оценка направления по его близости к целевому
+                score = np.dot(test_direction, self.target - self.position)
+                if score > best_score:
+                    best_score = score
+                    best_direction = test_direction
 
-        if not safe:
-            if np.linalg.norm(avoidance_vector) > 0:
-                new_direction = current_direction + avoidance_vector
-                new_direction /= np.linalg.norm(new_direction)
-                norm = np.linalg.norm(new_direction)
-                if norm > 0:
-                    new_direction /= norm
-                else:
-                    # Обработка случая, когда направление не может быть нормализовано (например, задание стандартного направления или остановка)
-                    new_direction = np.linalg.norm(np.array([0.1, 0]))
-                new_direction /= np.linalg.norm(new_direction)
-                self.velocity = new_direction * self.max_speed
-            else:
-                # Если все направления заблокированы, ищем направление, минимально удаленное от цели
-                self.find_alternative_path()
+        # Применение найденного лучшего направления
+        if best_direction is not None:
+            self.velocity = best_direction * self.max_speed
             return True
+        return False
+
+    def check_collision(self, position, buffer):
+        """ Проверяет, пересекается ли данная позиция с каким-либо препятствием, учитывая буфер. """
+        for obs in self.obstacles:
+            expanded_rect = patches.Rectangle((obs['x'] - buffer, obs['y'] - buffer), obs['width'] + 2*buffer, obs['height'] + 2*buffer)
+            if expanded_rect.contains_point(position):
+                return True
         return False
 
     def find_alternative_path(self):
@@ -124,44 +122,6 @@ class PSORobot:
                     min_angle = angle_diff
                     best_direction = direction
         self.velocity = best_direction * self.max_speed
-
-    # def avoid_obstacles_and_robots(self):
-    #     if not self.at_target:
-    #         current_direction = self.velocity / np.linalg.norm(self.velocity) if np.linalg.norm(self.velocity) > 0 else np.array([1, 0])
-    #         avoidance_vector = np.array([0.0, 0.0])
-    #         safe = True  # Предполагаем, что начальное направление безопасно
-    #
-    #         # Проверяем возможные столкновения вокруг текущего направления
-    #         directions = np.linspace(-np.pi, np.pi, 8, endpoint=False)  # Проверяем разные направления вокруг робота
-    #         for angle in directions:
-    #             test_direction = np.array([np.cos(self.angle + angle), np.sin(self.angle + angle)])
-    #             test_position = self.position + test_direction * self.max_speed
-    #
-    #             for obs in self.obstacles:
-    #                 rect = patches.Rectangle((obs['x'], obs['y']), obs['width'], obs['height'])
-    #                 if rect.contains_point(test_position):
-    #                     if angle == 0:
-    #                         safe = False  # Текущее направление небезопасно
-    #                     avoidance_vector -= test_direction  # Отталкиваемся от направления столкновения
-    #
-    #         if not safe:
-    #             if np.linalg.norm(avoidance_vector) > 0:
-    #                 # Нормализуем вектор избежания и корректируем скорость
-    #                 avoidance_vector /= np.linalg.norm(avoidance_vector)
-    #                 new_direction = current_direction + avoidance_vector
-    #                 norm = np.linalg.norm(new_direction)
-    #                 if norm > 0:
-    #                     new_direction /= norm
-    #                 else:
-    #                     # Обработка случая, когда направление не может быть нормализовано (например, задание стандартного направления или остановка)
-    #                     new_direction = np.linalg.norm(np.array([1, 0]))
-    #                 new_direction /= np.linalg.norm(new_direction)
-    #                 self.velocity = new_direction * self.max_speed
-    #             else:
-    #                 # Если все направления заблокированы, остановим робота
-    #                 self.velocity = np.zeros(2)
-    #             return True
-    #     return False
 
     def measure_distance(self):
         lidar_direction = np.array([np.cos(self.angle), np.sin(self.angle)])
@@ -200,7 +160,11 @@ class AnimatedPSOSimulation:
             robot.update_all_robots(self.robots)
 
         self.global_best_position = self.find_global_best()
+        self.width, self.height = 10, 10
         self.fig, self.ax = plt.subplots()
+        self.ax.set_aspect('equal')  # Сохраняем аспект при обновлении
+        self.ax.set_xlim(0, self.width)
+        self.ax.set_ylim(0, self.height)
         self.obstacles = obstacles
         self.start_time = time.time()  # Засекаем время старта
 
@@ -217,9 +181,9 @@ class AnimatedPSOSimulation:
     def animate(self):
         def update(frame):
             self.ax.clear()
-            self.ax.set_xlim(0, 10)
-            self.ax.set_ylim(0, 10)
-            self.ax.set_aspect('equal')
+            self.ax.set_aspect('equal')  # Сохраняем аспект при обновлении
+            self.ax.set_xlim(0, self.width)
+            self.ax.set_ylim(0, self.height)
 
             # Draw obstacles
             for obs in self.obstacles:
