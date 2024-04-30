@@ -24,9 +24,9 @@ class PSORobot:
 
     def update_velocity(self, global_best_position, delta_time=1):
         if not self.at_target:
-            inertia = 0.2
-            cognitive = 3.5
-            social = 3
+            inertia = 0.5
+            cognitive = 2.5
+            social = 1
             r1, r2 = np.random.rand(), np.random.rand()
 
             cognitive_velocity = cognitive * r1 * (self.target - self.position)
@@ -167,6 +167,7 @@ class AnimatedPSOSimulation:
         self.ax.set_ylim(0, self.height)
         self.obstacles = obstacles
         self.start_time = time.time()  # Засекаем время старта
+        self.all_robots_stopped = False
 
     def find_global_best(self):
         best_value = float('inf')
@@ -211,10 +212,11 @@ class AnimatedPSOSimulation:
                 if not robot.at_target:
                     all_at_target = False
 
-            if all_at_target:
+            if all_at_target and not self.all_robots_stopped:
                 end_time = time.time()
-                print(f"All robots have reached their targets. Total time: {end_time - self.start_time:.2f} seconds.")
-                plt.close(self.fig)  # Закрываем фигуру, чтобы остановить анимацию
+                print(f"Все роботы остановились. Время выполнения: {end_time - self.start_time:.2f} секунд.")
+                self.all_robots_stopped = True
+                # plt.close(self.fig)  # Закрываем фигуру, чтобы остановить анимацию
 
         anim = FuncAnimation(self.fig, update, frames=np.arange(100), repeat=False)
         plt.show()

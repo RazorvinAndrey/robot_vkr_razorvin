@@ -175,7 +175,7 @@ class AnimatedSimulation:
                 self.all_robots_stopped = True
                 end_time = time.time()
                 total_time = end_time - self.start_time
-                print(f"All robots have stopped. Execution time: {total_time:.2f} seconds.")
+                print(f"Все роботы остановились. Время выполнения: {total_time:.2f} секунд.")
 
         anim = FuncAnimation(self.fig, update, frames=np.arange(300), repeat=False)
         plt.show()

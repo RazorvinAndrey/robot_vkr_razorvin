@@ -224,7 +224,7 @@ class AnimatedSimulation:
 
             if active_robots == 0 and not self.all_robots_stopped:
                 end_time = time.time()
-                print(f"All robots have stopped or reached their targets. Execution time: {end_time - self.start_time:.2f} seconds.")
+                print(f"Все роботы остановились. Время выполнения: {end_time - self.start_time:.2f} секунд.")
                 self.all_robots_stopped = True
 
         active_robots = len(self.robots)
