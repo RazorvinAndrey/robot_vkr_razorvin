@@ -5,11 +5,18 @@ import matplotlib.patches as patches
 import time
 
 
+pos = []
+sec = 0
+
+
 class PSORobot:
     def __init__(self, x, y, target, obstacles):
         self.position = np.array([x, y], dtype=float)
+        self.x0 = x
+        self.y0 = y
         self.velocity = np.random.rand(2) * 0.1  # Инициализируем небольшую случайную начальную скорость
         self.angle = np.arctan2(self.velocity[1], self.velocity[0])
+        self.ang0 = self.angle
         self.target = np.array(target, dtype=float)
         self.path = [tuple(self.position)]
         self.max_speed = 0.5
@@ -56,7 +63,7 @@ class PSORobot:
                 self.path.append(tuple(self.position))
 
     def check_if_at_target(self):
-        target_radius = 0.2
+        target_radius = 0.3
         if np.linalg.norm(self.position - self.target) < target_radius:
             self.velocity = np.zeros(2)
             self.at_target = True
@@ -65,7 +72,7 @@ class PSORobot:
         if self.at_target:
             return False
 
-        buffer = 0.1  # Буферное расстояние для избежания столкновений
+        buffer = 0.15  # Буферное расстояние для избежания столкновений
         num_checks = 1  # Количество проверочных точек вдоль предполагаемой траектории
         best_direction = None
         best_score = float('-inf')
@@ -181,6 +188,7 @@ class AnimatedPSOSimulation:
 
     def animate(self):
         def update(frame):
+            global pos, sec
             self.ax.clear()
             self.ax.set_aspect('equal')  # Сохраняем аспект при обновлении
             self.ax.set_xlim(0, self.width)
@@ -195,7 +203,10 @@ class AnimatedPSOSimulation:
             current_global_best = self.find_global_best()
             if current_global_best is not None:
                 self.global_best_position = current_global_best
-
+            i = 0
+            Vx = []
+            Vy = []
+            W = []
             all_at_target = True
             for robot in self.robots:
                 robot.update_velocity(self.global_best_position)
@@ -204,16 +215,24 @@ class AnimatedPSOSimulation:
                 self.ax.plot(path_x, path_y, 'k-')
                 self.ax.plot(robot.position[0], robot.position[1], 'bo')
                 self.ax.plot(robot.target[0], robot.target[1], 'rx')
-
+                Vx.append((robot.position[0] - robot.x0)/1)
+                robot.x0 = robot.position[0]
+                Vy.append((robot.position[1] - robot.y0)/1)
+                robot.y0 = robot.position[1]
+                W.append((robot.angle - robot.ang0)/1)
+                robot.ang0 = robot.angle
                 # Lidar visualization
                 start, end = robot.lidar_visual()
                 self.ax.plot([start[0], end[0]], [start[1], end[1]], 'g-')
 
                 if not robot.at_target:
                     all_at_target = False
+                i += 1
+            pos.append([sum(Vx)/i, sum(Vy)/i, sum(W)/i])
 
             if all_at_target and not self.all_robots_stopped:
                 end_time = time.time()
+                sec = end_time - self.start_time
                 print(f"Все роботы остановились. Время выполнения: {end_time - self.start_time:.2f} секунд.")
                 self.all_robots_stopped = True
                 # plt.close(self.fig)  # Закрываем фигуру, чтобы остановить анимацию
@@ -223,8 +242,48 @@ class AnimatedPSOSimulation:
 
 
 # Example setup
-init_positions = [(0, 1), (2, 0), (1, 1), (0, 0)]
-target_positions = [(8, 7), (7, 7), (8, 8), (8.5, 8)]
+init_positions = [(0, 1), (2, 0), (1, 1), (0, 0), (0, 1.5), (2.5, 0), (1.5, 1.5), (0.5, 0.5),
+                  (0.4, 1.4), (2.4, 0.4), (1.4, 1.4), (0.4, 0.4), (0.4, 1.9), (2.9, 0.4), (1.9, 1.9), (0.9, 0.9)]
+target_positions = [(8, 7), (7, 7), (8, 8), (8.5, 8), (8.5, 7), (7.5, 7), (8.5, 8.5), (7.4, 9),
+                    (8.4, 7.4), (6.4, 7.4), (6.4, 8.4), (8.9, 8.4), (8.9, 7.4), (7.9, 7.4), (8.9, 8.9), (9.4, 8.4)]
 obstacles = [{'x': 4, 'y': 4, 'width': 1, 'height': 2}, {'x': 5, 'y': 1, 'width': 2, 'height': 1}, {'x': 6, 'y': 5, 'width': 1.5, 'height': 1.5}]
 simulation = AnimatedPSOSimulation(init_positions, target_positions, obstacles)
 simulation.animate()
+time_ = []
+Vx = []
+Vy = []
+W = []
+old_min, old_max = 0, len(pos)
+new_min, new_max = 0, sec
+
+old_range = old_max - old_min
+new_range = new_max - new_min
+
+
+for i in range(len(pos)):
+    converted = ((i - old_min) * new_range / old_range) + new_min
+    time_.append(converted)
+    Vx.append(pos[i][0])
+    Vy.append(pos[i][1])
+    W.append(pos[i][2])
+
+plt.suptitle("PSO")
+plt.subplot(131)
+plt.title("Vx")
+plt.xlabel("time, s")
+plt.ylabel("Vx, m/s")
+plt.plot(time_, Vx)
+
+plt.subplot(132)
+plt.title("Vy")
+plt.xlabel("time, s")
+plt.ylabel("Vy, m/s")
+plt.plot(time_, Vy)
+
+plt.subplot(133)
+plt.title("W")
+plt.xlabel("time, s")
+plt.ylabel("W, rad/s")
+plt.plot(time_, W)
+
+plt.show()

@@ -5,6 +5,9 @@ import matplotlib.patches as patches
 import time
 
 
+pos = []
+sec = 0
+
 class Rectangle(patches.Rectangle):
     def distance(self, point):
         closest_x = max(self.get_x(), min(point[0], self.get_x() + self.get_width()))
@@ -22,6 +25,9 @@ class Robot:
     def __init__(self, x, y, angle, target, obstacles, robots=None):
         self.x = x
         self.y = y
+        self.x0 = x
+        self.y0 = y
+        self.ang0 = 0
         self.angle = angle
         self.lidar_range = 5
         self.width = 0.4
@@ -185,6 +191,7 @@ class AnimatedSimulation:
         self.all_robots_stopped = False
         self.steps_without_movement = 0
 
+
     def create_obstacles(self, obstacle_params):
         obstacles = []
         for obstacle in obstacle_params:
@@ -193,6 +200,7 @@ class AnimatedSimulation:
 
     def animate(self):
         def update(frame):
+            global pos, sec
             nonlocal active_robots
 
             active_robots = 0
@@ -210,22 +218,35 @@ class AnimatedSimulation:
 
             for obstacle in robot.obstacles:
                 self.ax.add_patch(obstacle)
-
+            i = 0
+            Vx = []
+            Vy = []
+            W = []
             for robot in self.robots:
                 path_x, path_y = zip(*robot.path)
                 self.ax.plot(*robot.target_position, 'rs')
                 self.ax.plot(path_x, path_y, 'k-', linewidth=0.5)
                 self.ax.plot(robot.x, robot.y, 'bo')
+                Vx.append((robot.x - robot.x0)/1)
+                robot.x0 = robot.x
+                Vy.append((robot.y - robot.y0)/1)
+                robot.y0 = robot.y
+                W.append((robot.angle - robot.ang0)/1)
+                robot.ang0 = robot.angle
+
                 lidar_end_x, lidar_end_y = robot.measure_distance()
                 self.ax.plot([robot.x, lidar_end_x], [robot.y, lidar_end_y], 'g-')
 
                 # Проверка столкновений с другими роботами
                 robot.avoid_obstacles_and_robots()
-
+                i += 1
+            pos.append([sum(Vx)/i, sum(Vy)/i, sum(W)/i])
             if active_robots == 0 and not self.all_robots_stopped:
                 end_time = time.time()
+                sec = end_time - self.start_time
                 print(f"Все роботы остановились. Время выполнения: {end_time - self.start_time:.2f} секунд.")
                 self.all_robots_stopped = True
+
 
         active_robots = len(self.robots)
         anim = FuncAnimation(self.fig, update, frames=np.arange(300), repeat=False)
@@ -233,8 +254,48 @@ class AnimatedSimulation:
 
 
 # Пример настройки
-init_positions = [(0, 1), (2, 0), (1, 1), (0, 0)]
-target_positions = [(8, 7), (7, 7), (8, 8), (8.5, 8)]
+init_positions = [(0, 1), (2, 0), (1, 1), (0, 0), (0, 1.5), (2.5, 0), (1.5, 1.5), (0.5, 0.5),
+                  (0.4, 1.4), (2.4, 0.4), (1.4, 1.4), (0.4, 0.4), (0.4, 1.9), (2.9, 0.4), (1.9, 1.9), (0.9, 0.9)]
+target_positions = [(8, 7), (7, 7), (8, 8), (8.5, 8), (8.5, 7), (7.5, 7), (8.5, 8.5), (7.4, 9),
+                    (8.4, 7.4), (6.4, 7.4), (6.4, 8.4), (8.9, 8.4), (8.9, 7.4), (7.9, 7.4), (8.9, 8.9), (9.4, 8.4)]
 obstacles = [{'x': 4, 'y': 4, 'width': 1, 'height': 2}, {'x': 5, 'y': 1, 'width': 2, 'height': 1}, {'x': 6, 'y': 5, 'width': 1.5, 'height': 1.5}]
 simulation = AnimatedSimulation(init_positions, target_positions, obstacles)
 simulation.animate()
+time_ = []
+Vx = []
+Vy = []
+W = []
+old_min, old_max = 0, len(pos)
+new_min, new_max = 0, sec
+
+old_range = old_max - old_min
+new_range = new_max - new_min
+
+
+for i in range(len(pos)):
+    converted = ((i - old_min) * new_range / old_range) + new_min
+    time_.append(converted)
+    Vx.append(pos[i][0])
+    Vy.append(pos[i][1])
+    W.append(pos[i][2])
+
+plt.suptitle("COM")
+plt.subplot(131)
+plt.title("Vx")
+plt.xlabel("time, s")
+plt.ylabel("Vx, m/s")
+plt.plot(time_, Vx)
+
+plt.subplot(132)
+plt.title("Vy")
+plt.xlabel("time, s")
+plt.ylabel("Vy, m/s")
+plt.plot(time_, Vy)
+
+plt.subplot(133)
+plt.title("W")
+plt.xlabel("time, s")
+plt.ylabel("W, rad/s")
+plt.plot(time_, W)
+
+plt.show()
