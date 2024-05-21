@@ -1,16 +1,42 @@
-import RPi.GPIO as GPIO
-from i2c_itg3205 import *
-from time import sleep
-import atexit
-import math
-import socket
-import threading
-import json
+import numpy as np
 import time
+import json
+import threading
 from zeroconf import ServiceBrowser, ServiceInfo, Zeroconf
+import socket
+from i2c_itg3205 import *
+import RPi.GPIO as GPIO
+from time import sleep
+
+# Конфигурация для удаленного запуска
+SERVER_IP = "192.168.1.100"  # IP адрес сервера
+SERVER_PORT = 12345  # Порт сервера
+
+
+def listen_for_start():
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.connect((SERVER_IP, SERVER_PORT))
+        print("Connected to the server. Waiting for the start command...")
+        start_command = s.recv(1024).decode('utf-8')
+        init_positions = {"Robot1": (0, 1), "Robot2": (2, 0), "Robot3": (1, 1), "Robot4": (0, 0)}
+        target_positions = {"Robot1": (8, 7), "Robot2": (7, 7), "Robot3": (8, 8), "Robot4": (8.5, 8)}
+
+        robot_name = "Robot2"  # Изменить имя робота
+        robot = PSORobot(robot_name, init_positions[robot_name], target_positions[robot_name])
+        if start_command == "START":
+            print("Received start command. Starting the robot...")
+            start_time = time.time()
+            try:
+                robot.move_to_target()
+            except KeyboardInterrupt:
+                robot.stop()
+            end_time = time.time()
+            duration = end_time - start_time
+            s.sendall(f"FINISHED {robot.name} {duration:.2f}".encode('utf-8'))
+            print(f"Sent completion message to the server: {duration:.2f} seconds")
+
 
 #  ------------------------------------------Constants----------------------------------
-
 ENA = 13
 ENB = 12
 IN1 = 26
@@ -34,9 +60,7 @@ pwmA.start(0)
 pwmB.start(0)
 
 
-#  ------------------------------------------Close function----------------------------------
 def MotorStop():
-    print('motor stop')
     pwmA.ChangeDutyCycle(0)
     pwmB.ChangeDutyCycle(0)
     GPIO.output(IN1, False)
@@ -46,7 +70,6 @@ def MotorStop():
 
 
 def MotorOn(speed):
-    print('motor forward')
     pwmA.ChangeDutyCycle(speed)
     pwmB.ChangeDutyCycle(speed)
     GPIO.output(IN1, False)
@@ -55,19 +78,9 @@ def MotorOn(speed):
     GPIO.output(IN4, True)
 
 
-def on_esc():
-    print("end")
-    MotorStop()
-
-
-atexit.register(on_esc)
-
-
-#  ------------------------------------------Base function----------------------------------
-
 def turn_by_angle(angle_g):
     itg3205 = i2c_itg3205(1)
-    angle = angle_g*math.pi/180
+    angle = angle_g * math.pi / 180
     dt = 0.2
     spe = 60
     pwmA.ChangeDutyCycle(spe)
@@ -96,9 +109,6 @@ def turn_by_angle(angle_g):
             pass
     MotorStop()
 
-
-#  ------------------------------------------End program----------------------------------
-MotorStop()
 
 class RobotP2P:
     def __init__(self, robot_name, service_type="_robot._tcp.local.", port=12345):
@@ -174,7 +184,8 @@ class RobotP2P:
     def send_updates(self):
         while True:
             for robot_name, (ip, port) in self.known_robots.items():
-                message = json.dumps({"name": self.robot_name, "location": "x:100, y:200"})  # Customize this message
+                message = json.dumps(
+                    {"name": self.robot_name, "position": (self.x, self.y)})  # Update with real position
                 self.send_message(ip, port, message)
             time.sleep(1)
 
@@ -183,74 +194,104 @@ class RobotP2P:
         self.zeroconf.close()
 
 
-# ------------------------- Robot Movement Control ---------------------------
-class RealRobot:
+class PSORobot:
     def __init__(self, name, init_pos, target_pos):
         self.name = name
-        self.x, self.y = init_pos
-        self.target_x, self.target_y = target_pos
-        self.angle = 0  # Начальный угол движения
-        self.speed = 50  # Скорость движения
-
-        # Инициализация P2P связи
+        self.position = np.array(init_pos, dtype=float)
+        self.target = np.array(target_pos, dtype=float)
+        self.velocity = np.random.rand(2) * 0.1
+        self.angle = np.arctan2(self.velocity[1], self.velocity[0])
+        self.max_speed = 0.5
+        self.max_angular_speed = np.pi / 2
+        self.path = [tuple(self.position)]
+        self.at_target = False
         self.p2p = RobotP2P(self.name)
         self.p2p.start()
 
     def move_forward(self, duration):
-        MotorOn(self.speed)
+        MotorOn(self.max_speed * 100)
         sleep(duration)
         MotorStop()
 
     def turn_to(self, target_angle):
         current_angle = self.angle
-        angle_diff = (target_angle - current_angle) % 360
-        if angle_diff > 180:
-            angle_diff -= 360
-        turn_by_angle(angle_diff)
+        angle_diff = (target_angle - current_angle) % (2 * np.pi)
+        if angle_diff > np.pi:
+            angle_diff -= 2 * np.pi
+        turn_by_angle(np.degrees(angle_diff))
         self.angle = target_angle
 
-    def move_to_target(self):
-        while not self.is_at_target():
-            target_angle = self.calculate_target_angle()
+    def update_velocity(self, global_best_position):
+        if not self.at_target:
+            inertia = 0.5
+            cognitive = 2.5
+            social = 1
+            r1, r2 = np.random.rand(), np.random.rand()
+
+            cognitive_velocity = cognitive * r1 * (self.target - self.position)
+            social_velocity = social * r2 * (global_best_position - self.position)
+
+            velocity = inertia * self.velocity + cognitive_velocity + social_velocity
+            speed = np.linalg.norm(velocity)
+
+            if speed > self.max_speed:
+                velocity = velocity * (self.max_speed / speed)
+            self.velocity = velocity
+            self.update_angle()
+
+    def update_angle(self):
+        if np.linalg.norm(self.velocity) > 0:
+            target_angle = np.arctan2(self.velocity[1], self.velocity[0])
+            angle_diff = (target_angle - self.angle + np.pi) % (2 * np.pi) - np.pi
+            angle_diff = np.clip(angle_diff, -self.max_angular_speed, self.max_angular_speed)
+            self.angle += angle_diff
+
+    def move(self):
+        if not self.at_target:
+            target_angle = np.arctan2(self.velocity[1], self.velocity[0])
             self.turn_to(target_angle)
-            distance = self.calculate_distance_to_target()
-            self.move_forward(distance / self.speed)
-            self.update_position()
+            distance = np.linalg.norm(self.velocity)
+            self.move_forward(distance / self.max_speed)
+            self.position += self.velocity
+            self.path.append(tuple(self.position))
+            self.check_if_at_target()
             self.send_position_update()
 
-    def calculate_target_angle(self):
-        dx = self.target_x - self.x
-        dy = self.target_y - self.y
-        return math.degrees(math.atan2(dy, dx)) % 360
-
-    def calculate_distance_to_target(self):
-        dx = self.target_x - self.x
-        dy = self.target_y - self.y
-        return math.sqrt(dx ** 2 + dy ** 2)
-
-    def is_at_target(self):
-        return self.calculate_distance_to_target() < 0.1
-
-    def update_position(self):
-        self.x = self.target_x
-        self.y = self.target_y
+    def check_if_at_target(self):
+        target_radius = 0.3
+        if np.linalg.norm(self.position - self.target) < target_radius:
+            self.velocity = np.zeros(2)
+            self.at_target = True
 
     def send_position_update(self):
-        message = json.dumps({"name": self.name, "position": (self.x, self.y)})
+        message = json.dumps({"name": self.name, "position": self.position.tolist()})
         for robot_name, (ip, port) in self.p2p.known_robots.items():
             self.p2p.send_message(ip, port, message)
 
+    def move_to_target(self):
+        try:
+            while not self.at_target:
+                global_best_position = self.find_global_best()
+                self.update_velocity(global_best_position)
+                self.move()
+                time.sleep(0.1)
+        except KeyboardInterrupt:
+            self.stop()
+
+    def find_global_best(self):
+        best_value = float('inf')
+        best_position = None
+        for robot_name, (ip, port) in self.p2p.known_robots.items():
+            value = np.linalg.norm(self.position - self.target)
+            if value < best_value:
+                best_value = value
+                best_position = self.position
+        return best_position
+
     def stop(self):
         self.p2p.stop()
+        MotorStop()
 
 
-if __name__ == "__main__":
-    init_positions = {"Robot1": (0, 1), "Robot2": (2, 0), "Robot3": (1, 1), "Robot4": (0, 0)}
-    target_positions = {"Robot1": (8, 7), "Robot2": (7, 7), "Robot3": (8, 8), "Robot4": (8.5, 8)}
-
-    robot_name = "Robot2"  # Change this for each robot
-    robot = RealRobot(robot_name, init_positions[robot_name], target_positions[robot_name])
-    try:
-        robot.move_to_target()
-    except KeyboardInterrupt:
-        robot.stop()
+# Запуск прослушивания команды старта в отдельном потоке
+threading.Thread(target=listen_for_start).start()
